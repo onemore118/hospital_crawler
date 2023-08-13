@@ -16,4 +16,3 @@ pip install pandas
 ```shell
 python src/main.py
 ```
-
