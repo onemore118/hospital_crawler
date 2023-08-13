@@ -1,7 +1,8 @@
 from src.hospital_item import HospitalItem, HospitalDetail, LabItem, DoctorItem, CommentItem
 from bs4 import BeautifulSoup
 import requests
-import re
+import traceback
+
 
 from src.utils.formaters import  obj_to_jsonstr
 
@@ -9,17 +10,28 @@ from src.utils.formaters import  obj_to_jsonstr
 class HospitalCrawler(object):
     def __init__(self, url:str):
         self.url = url
+
+        parts = url.split("/")
+        self.replace_prefix = "/".join(parts[3:5]) + '/'
+
         self.hospital_item:HospitalItem = HospitalItem()
 
-    def parse(self):
-        self.detail_page_parse()
-        self.labs_page_parse()
-        self.doctor_page_parse()
-        self.comments_page_parse()
+    def parse(self) -> HospitalItem:
+        try:
+            self.detail_page_parse()
+            self.labs_page_parse()
+            self.doctor_page_parse()
+            self.comments_page_parse()
+            return self.hospital_item
+        except Exception as e:
+            traceback.print_exc()
+            print(self.url)
+        return None
+
 
     def detail_page_parse(self):
         #将url格式化为https://yyk.39.net/hospital/1bcf2_detail.html
-        detail_url:str = self.url.removesuffix('.html').replace('gz/zonghe/', 'hospital/') + '_detail.html'
+        detail_url:str = self.url.removesuffix('.html').replace(self.replace_prefix, 'hospital/') + '_detail.html'
         response = requests.get(detail_url)
         html_content = response.content
         hospital: HospitalDetail = HospitalDetail()
@@ -27,7 +39,8 @@ class HospitalCrawler(object):
         soup = BeautifulSoup(html_content, 'html.parser')
         # 根据医院别名
         intro_element = soup.find('p', class_='intro')
-        alias_name_content = intro_element.find('span').get_text(strip=True)
+        if intro_element:
+            self.hospital_item.alias_name = intro_element.find('span').get_text(strip=True)
 
         # 根据医院名称
         hospital_name_element = soup.find('div', class_='hospitalname')
@@ -65,7 +78,7 @@ class HospitalCrawler(object):
 
 
         self.hospital_item.id = self.url.split('/')[-1].removesuffix('.html')
-        self.hospital_item.alias_name = alias_name_content
+
         self.hospital_item.hospital_name = hospital_name
         self.hospital_item.tags = tags_content
 
@@ -74,7 +87,7 @@ class HospitalCrawler(object):
 
     def labs_page_parse(self):
         # 将url格式化为诸如https://yyk.39.net/hospital/53c74_labs.html
-        labs_url:str = self.url.removesuffix('.html').replace('gz/zonghe/', 'hospital/') + '_labs.html'
+        labs_url:str = self.url.removesuffix('.html').replace(self.replace_prefix, 'hospital/') + '_labs.html'
         response = requests.get(labs_url)
         html_content = response.content
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -103,7 +116,7 @@ class HospitalCrawler(object):
 
     def doctor_page_parse(self):
         # 将url格式化为https://yyk.39.net/hospital/1fc85_doctors.html
-        doctor_url:str = self.url.removesuffix('.html').replace('gz/zonghe/', 'hospital/') + '_doctors.html'
+        doctor_url:str = self.url.removesuffix('.html').replace(self.replace_prefix, 'hospital/') + '_doctors.html'
         response = requests.get(doctor_url)
         html_content = response.content
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -119,30 +132,31 @@ class HospitalCrawler(object):
             soup = BeautifulSoup(html_content, 'html.parser')
 
             doctortable_ul = soup.find('ul', class_='doctortable')
-            for li in doctortable_ul.find_all('li'):
-                doctor_item: DoctorItem = DoctorItem()
-                # 提取姓名和职称
-                name_tag = li.find('strong').find('a')
-                doctor_item.name = name_tag.text
+            if doctortable_ul:
+                for li in doctortable_ul.find_all('li'):
+                    doctor_item: DoctorItem = DoctorItem()
+                    # 提取姓名和职称
+                    name_tag = li.find('strong').find('a')
+                    doctor_item.name = name_tag.text
 
-                # 如果职称存在于<p>标签中
-                title_tag = li.find('p')
-                if title_tag:
-                    doctor_item.title = title_tag.text
+                    # 如果职称存在于<p>标签中
+                    title_tag = li.find('p')
+                    if title_tag:
+                        doctor_item.title = title_tag.text
 
-                # 提取科室信息
-                department_tag = li.find_all('p')[1]
-                if department_tag:
-                    department_content = department_tag.text.split(' ')
-                    doctor_item.hospital_name = department_content[0]
-                    doctor_item.lab_name = department_content[1]
+                    # 提取科室信息
+                    department_tag = li.find_all('p')[1]
+                    if department_tag:
+                        department_content = department_tag.text.split(' ')
+                        doctor_item.hospital_name = department_content[0]
+                        doctor_item.lab_name = department_content[1]
 
-                # 提取擅长疾病
-                specialty_tag = li.find('b')
-                if specialty_tag:
-                    doctor_item.major = specialty_tag.text
+                    # 提取擅长疾病
+                    specialty_tag = li.find('b')
+                    if specialty_tag:
+                        doctor_item.major = specialty_tag.text
 
-                doctors.append(doctor_item)
+                    doctors.append(doctor_item)
 
         self.hospital_item.doctors = doctors
 
@@ -224,9 +238,11 @@ class HospitalCrawler(object):
                     break  # 找到最后一页的页码后退出循环
         return last_page_number
 
+    def get_hospital_item(self):
+        return self.hospital_item
 
 if __name__ == '__main__':
-    hospital_crawler = HospitalCrawler('https://yyk.39.net/gz/zonghe/52ae6.html')
-    hospital_crawler.comments_page_parse()
+    hospital_crawler = HospitalCrawler('https://yyk.39.net/gz/zonghe/f9a43.html')
+    hospital_crawler.parse()
     print(obj_to_jsonstr(hospital_crawler.hospital_item))
 
