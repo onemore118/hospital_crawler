@@ -7,7 +7,7 @@
 
 ## 启动方式
 0. 配置python3环境
-1. 安装BeautifulSoup
+1. 安装依赖
 ```shell
 pip install beautifulsoup4
 pip install pandas
